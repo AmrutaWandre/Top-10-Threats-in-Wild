@@ -1,0 +1,57 @@
+njRAT (AKA Bladabindi) is described as “a remote access trojan (RAT) has capabilities to log keystrokes, access the victim’s camera, steal credentials stored in browsers, 
+open a reverse shell, upload/download files, view the victim’s desktop, perform process, file, and registry manipulations, and capabilities to let the attacker update, uninstall,
+restart, close, disconnect the RAT and rename its campaign ID. Through the Command & Control (CnC) server software, the attacker has capabilities to create and configure the malware to spread through USB drives.”
+
+njRAT is written in the C# language,decompile the sample in dnSpy and analyze the C# source code.
+
+Mutex and Initialization
+The main function of this sample calls the method OK.ko(), which will carry out some of the initial actions, one them being the creation of a new mutex. The malware attempts to open a new mutex named “9e352eebda58736627852c7e3cc9652b”. 
+
+If the malware is not able to open the mutex, it will exit using the ProjectData.EndApp() method.
+
+Next, the malware will call the OK.INS() method, which can be thought of as an initialization method, as it performs a lot of the “overhead” work needed before njRAT can execute its full functionality. 
+This overhead includes establishing persistence and modifying firewall rules, but first it checks if there is a file called server.exe in the TEMP directory. 
+If there is, the malware deletes the original server.exe, copies itself to a new server.exe file and then continues its execution as a new server.exe process.
+
+Next, njRAT adds a firewall rule to allow it to communicate over the network, allowing it to connect to its C2 server later on.
+
+
+Persistence
+njRAT uses two very simple techniques for establishing redundant persistence. First, the malware creates a subkey named “9e352eebda58736627852c7e3cc9652b” under HKCU\Software\Microsoft\Windows\CurrentVersion\Run, 
+with the value being the name of the njRAT executable, which is w.exe in this case. It then performs the same process in the HKLM hive, allowing the malware to persist on the computer, across all possible users. 
+Once those registry subkeys have been created, njRAT adds an additional layer of persistence by again copying itself, this time into a hidden file named “9e352eebda58736627852c7e3cc9652b.exe” residing in the user’s startup folder, 
+meaning that the executable will be run every time windows starts.
+
+Evasion/Anti-Analysis
+njRAT employs some interesting evasion/anti-analysis techniques. Also within the OK.INS() method, njRAT attempts to kill a targeted process which must be specified in the builder before deploying the malware. 
+The image below, from a github repository hosting a version of the RAT [2], shows what the builder looks like. Note the “Exsample.exe” in the Kill Process dialog box.
+
+njRAT also checks if a few processes of interest are running, specifically Task Manager, Process Viewer, Process Hacker, and Process Explorer. 
+These are all tools that can be used to examine and kill running processes. If any of these target processes are running, njRAT appears to actually disable the process termination buttons in those processes.
+
+njRAT employs one more interesting trick, this one I had not seen before. The malware uses NtSetInformationProcess and GetCurrentProcess to protect the malware process from being terminated in any way. 
+The PInformationClass parameter of the current process is set to the value 0x1D (29 in decimal), which is equivalent to BreakOnTermination, meaning that the infected computer will BSOD (Blue Screen of Death) 
+if the malware process is manually terminated.
+
+njRAT is also capable of propagating through USB drives. If a USB drive is connected to the infected computer, the malware copies the svchost executable from the computer into a new svchost executable on the USB drive. 
+The malware then copies itself into the USB drive’s svchost executable, masquerading the malware as a legitimate executable. The malicious svchost executable is then made hidden, 
+so it won’t be seen on the USB drive unless the user is specifically looking for hidden files on that USB drive. 
+The malware then writes commands to the autorun.inf file to execute the malicious svchost executable anytime the USB drive is plugged into a computer. 
+Now, when the USB drive is plugged into a computer, it will execute as svchost.exe. Of note, since Windows Vista, Windows computers will not automatically execute autorun executables from disks and USB drives as they did in the past. 
+Users are now required to approve the autorun on the computer.
+
+Command and Control (C2)
+njRAT sends a registration message to the C2 server when connecting. This registration message contains info like the Windows OS version, Windows OS service pack, date, username, attached webcams, architecture, and select registry keys.
+
+Interesting to note, the C2 server’s real IP address is hidden behind the portmap.io service. Portmap.io is a free port forwarding solution which uses a VPN and port forwarding to hide the IP addresses of customers using the service. 
+Threat actors have been observed using this service in the past with other strains of malware.
+
+Now that the infected computer has connected to the C2 server, njRAT will now wait for commands to be issued by the C2 server. Within the Ind method, the malware then uses the CompareString() method to compare the command issued by the 
+C2 server to the known commands that it is able to execute. When there is a match, njRAT executes the command’s corresponding functions.
+
+The commands that njRAT is able to execute include: Downloading files from the internet, disabling task manager, disabling the command prompt, turning off monitors, keylogging, and shutting the computer down just to name a few.
+
+
+Self-Deletion
+njRAT is able to remove itself from the infected computer if the operator desires. The malware will delete the registry subkeys it created, delete the firewall rule it created for its C2 communication, delete itself from the startup folder, and the delete itself entirely from disk and end its process.
+

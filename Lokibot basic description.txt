@@ -1,0 +1,119 @@
+Lokibot is one of the most well-known information stealers on the malware landscape. This sample is using the known technique of blurring images in documents to encourage users to enable macros. While quite simple this is fairly common and effective against users. 
+LokiBot, also known as Loki-bot or Loki bot, is an information stealer malware that collects credentials from the most widely used web browsers, FTP, email clients, and over a hundred software tools installed on the infected system. It was developed in one of the ex-USSR countries.
+
+Initially created and sold by a hacker known as "lokistov" or "Carter," the first versions of LokiBot spyware used to cost up to $400. However, almost identical malware appeared on hacker forums soon after, available for as little as $80 from several sellers. As it is thought, "lokistov" himself was hacked, and the virus's source code was leaked, allowing others to use its techniques and sell remarkably similar malware.
+
+
+
+1.Initial Vector:
+The attack starts with a malicious XLS attachment, sent in a phishing email, containing an obfuscated macro 
+that downloads a heavily packed second-stage downloader. The second stage fetches the encrypted third-stage, 
+which includes three layered encrypted Lokibot. After a privilege escalation, the third stage deploys Lokibot. 
+The Image below shows the infection chain.
+
+2.When the user opens the phishing email, it presents a Spanish social engineering message ("Payment: Find scheduled payment dates attached"). 
+The Excel sheet uses another common social engineering technique by showing a blurred-out image of a table with the text "Changing the size of this document, 
+please wait," in Spanish. If the victim clicks the "Enable Content" button, thinkin
+
+3.The macro is mainly obfuscated by using long hexadecimal variable names. 
+The screenshot below shows a portion of the `Workbook_Open` function of this macro.
+
+4.It decrypts the URL for the second-stage from hardcoded bytes, saves it to the "Templates" folder, 
+and executes it. The traffic generated from the macro is shown below.
+
+5.The packer contains a timer `xvv` timer under `Form_main`, which unpacks the payload. 
+The timer and its handler code are shown below.
+
+6.The unpacking function performs the following steps:
+
+a.Loads the image resource with name `T__6541957882` into memory.
+b.Finds the anchor `WWEX` and copies data following to the new buffer.
+c.Adds `0xEE` to the bytes to decode the DLL.
+d.Reflectively loads decoded DLL into memory and executes it.
+
+The unpacked DLL is also written in Delphi. It fetches the third payload from the hardcoded URL.
+The DLL sets a timer, as shown below, which will execute the downloader function periodically.
+
+The `Download3rdStage` will first decode `https://discord.com` and try to connect to it. 
+Then, it performs a time-based anti-debug check, as shown in the code below. 
+If any of these checks fail, the DLL will not download the third stage.
+
+The DLL decodes the hex string using the following steps:
+
+Reverse the hex string.
+Convert hexadecimal digits to bytes (unhexlify).
+XOR decode with hardcoded key "ZKkz8PH0".
+
+The third stage is also written in Delphi. At the start, it loads a sizable binary resource named `DVCLAL` 
+into memory. It then generates the key `7x21zoom8675309` from hard coded bytes. 
+The key is then used to decrypt the resource data using a custom encryption algorithm. 
+The malware then recovers the configuration structure from decrypted resource data. 
+The structure fields are delimited by string `*()%@5YT!@#G__T@#$%^&*()__#@$#57$#!@`.
+
+The decryption algorithm is shown below.
+
+Injecting malicious DLL to Notepad.exe
+
+Then, the malware will check if `InjectDLLToNotepadFlag` is set and `reverse_str(FileName) + ".url"` (mheX.url) file doesn't exist in C:\Users\\AppData\Local\`. 
+If yes, it will inject malicious DLL into Notepad.exe using the following steps:
+
+Launch a Notepad.exe in the suspended state (dwCreationFlag = CREATE_SUSPENDED).
+Get the imported DLL name from the malicious DLL's import table (the first one is "kernel32.dll") and write to 
+the suspended process.
+
+Write the following 12-byte structure containing addresses of kernel32: LoadLibrary, kernel32.sleep, and DLL string
+
+Execute this shellcode in Notepad.exe using `CreateRemoteThread` and pass the pointer to the 12-byte structure shown above. This shellcode loads the DLL ("kernel32.dll") and then goes into an infinite sleep loop.
+Write DLL ("kernel32.dll") string again to notepad.exe.
+Write the 20-byte structure to Notepad.exe containing pointers to important APIs and two strings: imported DLL name and imported API name.
+
+Decrypting and executing Lokibot
+
+After attempting to bypass the UAC, the third-stage DLL will check if `AutoRunKeyFlag` is set. 
+For this DLL, it is not set. It will then jump to code that decrypts the Lokibot executable using decryption keys 
+from the configuration structure. The first two layers are decrypted using `DecryptionKeyA` and `DecryptionKeyB`, 
+and reverses all the data. After that, the final layer is decrypted using the same decryption method used to 
+decrypt resource data at the start of the third stage.
+
+The DLL contains multiple ways to execute a PE file. The execution method is decided based on the values of 
+ExecutionFlag A, B, C. Their values will lead to the following code for the current configuration, which will 
+decrypt the shellcode from the configuration using DecryptionKeyB, pass it three parameters: pointer to decrypted 
+Lokibot .exe, a pointer to an array of string and a pointer to current command line.
+
+The shellcode will create a suspended process using the third parameter as a command line command and injects Lokibot into it using process hollowing.
+
+Contamination. The victim downloads a malicious archive or a Microsoft Office file which eventually downloads the malware;
+Being packed initially, the keylogger unpacks itself and begins the execution of the main payload;
+The virus creates unique loop-functions for each application that it is targeting and saves retrieved data into a buffer;
+Then, a registry key is modified, and the trojan is explicitly copied into a folder with a specific name unique name under the %APPDATA% folder. This allows the virus to establish persistence. MachineGuid MD5 is used for the name generation, and the name can also be used as a Mutex as well as bot-id. As the last action of this step, the virus generates a registry key that points to the file it copied before to the specific folder inside the %APPDATA% folder;
+Then, depending on if the current user is privileged or not, the virus sets persistence either under HKEY_LOCAL_MACHINE or KEY_CURRENT_USER;
+Next, general system information is sent to the C&C server;
+For persistence, the keylogger then applies the triple-DES encryption technique to the URL and the registry key;
+After this, the virus starts waiting for commands from C&C, creating a new thread to detect the C&C response.
+
+LokiBot execution process
+The simulation starts with opening a Microsoft Office file. Immediately, WINWORD.EXE is executed with enable macros.
+Then, through the exploitation of the CVE-2017-11882 vulnerability, Microsoft Office Equation Editor proceeds to download a malicious executable file;
+Finally, a malicious executable file runs itself and then proceeds to steal the personal data and connect to the C&C server.
+
+The virus generates multiple artifacts during its execution process. Particularly, four types of files can be simultaneously stored in the secret %APPDATA% directory at any point in time. Those files can have ".exe," ".lck," ".hdb" or ".kdb." extensions, and each file type is used for a specific purpose:
+
+.exe files contain an executable copy of the trojan that triggers when a user logs into an account,
+.lck files are generated to prevent resource conflicts when either Windows Credentials or Keylogging are decrypted,
+.hdb files are used to store the hashes of all data samples already transmitted to the C&C server
+.kdb files are in turn used to hold information about the data that is yet to be sent to the server
+
+First, LokiBot takes the value of MachineGuid from the registry branch HKEY_LOCAL_MACHINE \ SOFTWARE \ Microsoft \ Cryptography . In the case of our simulation, it was set to dc5131b5-5fbc-4f85-b1ed-28d4392080ca.
+Then, the virus uses the MD5 algorithm to calculate the hash sum of the MachineGuid, which in our case ended up being c83ba0aa282a966263dda560052b3caf.
+
+Finally, characters from the 8th to the 13th of the resulting hash amount are used as the subdirectory's name, and the characters from the 13th to the 18th are used as the name of the files.
+
+LokiBot communication with C&C
+To communicate with the C&C server, the patched version of the virus, which is also the most widely spread strain, sends a "ckav.ru" string. Interestingly, the sent data is also is a substring of "fuckav.ru."
+
+Among other things, you can detect whether it is LokiBot in front of you or not by looking inside sending packets - there's always text "ckav.ru" inside them. Just click on the sent packet in the "HTTP REQUESTS" tab and take a look inside a packet.
+
+1st Stage
+During May 2023, we obtained two types of Word documents for analysis. The first type featured an external link embedded within an XML file, “word/_rels/document.xml.rels,” while the second type included a VBA script that executed a macro immediately upon opening the document. Notably, both files contained a strikingly similar bait image, depicted in Figure 1.
+
+
